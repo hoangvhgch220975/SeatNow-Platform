@@ -1,0 +1,567 @@
+{
+  "info": {
+    "name": "SeatNow - Booking Service",
+    "_postman_id": "booking-service-2026-v2",
+    "description": "Complete API collection for SeatNow Booking Service with all endpoints and assertions.\nBase URL: http://localhost:3004\n\nSetup: Login via Auth collection to get {{token}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3004/api/v1", "type": "string" },
+    { "key": "token", "value": "", "type": "string", "description": "Lay tu Auth - Login" },
+    { "key": "restaurantId", "value": "1D106F0B-F292-405B-9E3A-76B219141863", "type": "string" },
+    { "key": "tableId", "value": "7C326061-FB2C-4A2D-BC97-206C9127974A", "type": "string" },
+    { "key": "bookingId", "value": "", "type": "string" },
+    { "key": "bookingCode", "value": "", "type": "string" },
+    { "key": "guestPhone", "value": "+84901234567", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Public/Guest Operations",
+      "item": [
+        {
+          "name": "Create Booking (Guest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const res = pm.response.json();",
+                  "const booking = res.data || res.booking || res;",
+                  "pm.test('Booking created with code', function () {",
+                  "    pm.expect(booking).to.have.property('id');",
+                  "    pm.expect(booking).to.have.property('bookingCode');",
+                  "});",
+                  "",
+                  "if (booking.id) {",
+                  "    pm.collectionVariables.set('bookingId', booking.id);",
+                  "    pm.collectionVariables.set('bookingCode', booking.bookingCode);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"tableId\": \"{{tableId}}\",\n  \"bookingDate\": \"2026-12-25\",\n  \"bookingTime\": \"19:00\",\n  \"numGuests\": 4,\n  \"guestName\": \"Guest Test\",\n  \"guestPhone\": \"{{guestPhone}}\",\n  \"guestEmail\": \"guest@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/bookings"
+          }
+        },
+        {
+          "name": "Guest Lookup Booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const res = pm.response.json();",
+                  "pm.test('Found correct booking', function () {",
+                  "    pm.expect(res.bookingCode || res.data.bookingCode).to.eql(pm.collectionVariables.get('bookingCode'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/bookings/guest/lookup?bookingCode={{bookingCode}}&guestPhone={{guestPhone}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "guest", "lookup"],
+              "query": [
+                { "key": "bookingCode", "value": "{{bookingCode}}" },
+                { "key": "guestPhone", "value": "{{guestPhone}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Customer Operations",
+      "item": [
+        {
+          "name": "Create Booking (Customer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "const booking = res.data || res.booking || res;",
+                  "if (booking.id) {",
+                  "    pm.collectionVariables.set('bookingId', booking.id);",
+                  "    pm.collectionVariables.set('bookingCode', booking.bookingCode);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"tableId\": \"{{tableId}}\",\n  \"bookingDate\": \"2026-12-25\",\n  \"bookingTime\": \"20:00\",\n  \"numGuests\": 2\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/bookings"
+          }
+        },
+        {
+          "name": "Get My Bookings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "pm.test('Response is array', function () {",
+                  "    pm.expect(res.data || res).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/bookings/my-bookings"
+          }
+        },
+        {
+          "name": "Get Booking Detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/bookings/{{bookingId}}"
+          }
+        },
+        {
+          "name": "Get Booking QR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Content-Type is image', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('image');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/qr"
+          }
+        },
+        {
+          "name": "Cancel Booking (Customer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "const booking = res.data || res;",
+                  "pm.test('Refund logic check', function () {",
+                  "    pm.expect(booking).to.have.property('depositRefunded');",
+                  "    console.log('Deposit Refunded:', booking.depositRefunded);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancellationReason\": \"User cancelled test\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/cancel"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Owner/Admin Operations",
+      "item": [
+        {
+          "name": "Get Restaurant Bookings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/restaurants/{{restaurantId}}/bookings"
+          }
+        },
+        {
+          "name": "Get Revenue Stats",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/restaurants/{{restaurantId}}/revenue-stats?period=month"
+          }
+        },
+        {
+          "name": "Get Hourly Booking Stats (Restaurant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "pm.test('Response is array', function () {",
+                  "    pm.expect(res.data || res).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/restaurants/{{restaurantId}}/stats/hourly?period=week"
+          }
+        },
+        {
+          "name": "Get Hourly Booking Stats (Portfolio)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "pm.test('Response is array', function () {",
+                  "    pm.expect(res.data || res).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/owner/stats/hourly?period=month"
+          }
+        },
+        {
+          "name": "Get Owner Portfolio Summary (MoM)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "pm.test('Has summary and comparisons', function () {",
+                  "    pm.expect(res.data.summary).to.have.property('totalRevenue');",
+                  "    pm.expect(res.data).to.have.property('comparisons');",
+                  "    pm.expect(res.data.comparisons).to.have.property('revenueGrowth');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/owner/portfolio-summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["owner", "portfolio-summary"]
+            }
+          }
+        },
+        {
+          "name": "Get Owner Portfolio Revenue Stats (Timeline)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "pm.test('Response is array', function () {",
+                  "    pm.expect(res.data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/owner/revenue-stats?period=month",
+              "host": ["{{baseUrl}}"],
+              "path": ["owner", "revenue-stats"],
+              "query": [{ "key": "period", "value": "month" }]
+            }
+          }
+        },
+        {
+          "name": "Get Restaurant Stats Summary (MoM)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "pm.test('Has KPI and comparisons', function () {",
+                  "    pm.expect(res.data).to.have.property('totalRevenue');",
+                  "    pm.expect(res.data).to.have.property('comparisons');",
+                  "    pm.expect(res.data.comparisons).to.have.property('bookingsGrowth');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/stats-summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["restaurants", "{{restaurantId}}", "stats-summary"]
+            }
+          }
+        },
+        {
+          "name": "Update Booking Status (Confirm)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/confirm"
+          }
+        },
+        {
+          "name": "Update Booking Status (Arrived)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/arrived"
+          }
+        },
+        {
+          "name": "Update Booking Status (Complete)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const res = pm.response.json();",
+                  "const booking = res.data || res.booking || res;",
+                  "",
+                  "pm.test('Loyalty points should be awarded (if customerId present)', function () {",
+                  "    // Note: Point awarding is internal to the booking-service logic",
+                  "    // 10,000 VND = 1 pt (deposit) or 1 guest = 1 pt (no deposit)",
+                  "    pm.expect(booking.status).to.equal('COMPLETED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/complete"
+          }
+        },
+        {
+          "name": "Update Booking Status (No-Show)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/no-show"
+          }
+        },
+        {
+          "name": "Cancel Booking (Owner)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "const booking = res.data || res;",
+                  "pm.test('Owner cancellation with refund', function () {",
+                  "    pm.expect(booking).to.have.property('depositRefunded');",
+                  "    // Owner cancel should always trigger refund",
+                  "    pm.expect(booking.depositRefunded).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancellationReason\": \"Owner adjustment\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/bookings/{{bookingId}}/cancel"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Zero-Latency Verification",
+      "description": "Requests to verify the Zero-Latency Table Synchronization system. \n\nNote: For real-time testing, use the `scripts/test-socket-hold.html` tool to observe the `tableStatusChanged` socket events.",
+      "item": [
+        {
+          "name": "Check Real-time Availability (Fallback)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/booking-restaurants/{{restaurantId}}/availability?date=2026-12-25&time=19:00&guests=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["booking-restaurants", "{{restaurantId}}", "availability"],
+              "query": [
+                { "key": "date", "value": "2026-12-25" },
+                { "key": "time", "value": "19:00" },
+                { "key": "guests", "value": "1" }
+              ]
+            },
+            "description": "API fallback to verify table status if Socket.IO is disconnected."
+          }
+        }
+      ]
+    }
+  ]
+}

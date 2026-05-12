@@ -1,0 +1,600 @@
+{
+	"info": {
+		"_postman_id": "cdefab12-3490-481d-a238-payment11f88",
+		"name": "SeatNow Payment Service",
+		"description": "Collection for SeatNow Payment Service APIs (Port 3005)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "12345678"
+	},
+	"item": [
+		{
+			"name": "1. Health & Home",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3005/health",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3005",
+							"path": [
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Home",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:3005/home",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3005",
+							"path": [
+								"home"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Deposit & Transactions",
+			"item": [
+				{
+					"name": "Generate Deposit QR",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"bookingId\": \"<booking-uuid>\",\n    \"amount\": 50000,\n    \"provider\": \"momo\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/deposit/generate-qr",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"deposit",
+								"generate-qr"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Transaction Details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/transaction/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"transaction",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "<transaction-uuid>"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Wallet Operations",
+			"item": [
+				{
+					"name": "Create Wallet Topup",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 100000,\n    \"provider\": \"vnpay\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/wallet/topup/create",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"wallet",
+								"topup",
+								"create"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Wallet Balance",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/wallet/balance?restaurantId=the-culinary-curator",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"wallet",
+								"balance"
+							],
+							"query": [
+								{
+									"key": "restaurantId",
+									"value": "the-culinary-curator",
+									"description": "Có thể dùng UUID hoặc Slug"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Wallet History",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/wallet/history?restaurantId=the-culinary-curator&type=WITHDRAWAL",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"wallet",
+								"history"
+							],
+							"query": [
+								{
+									"key": "restaurantId",
+									"value": "the-culinary-curator"
+								},
+								{
+									"key": "type",
+									"value": "WITHDRAWAL",
+									"description": "Lọc theo loại giao dịch (tùy chọn)"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Recent Transactions",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/wallet/recent-transactions?restaurantId=4A3B2C1D-E5F6-4A7B-8C9D-0E1A2B3D4F5E&limit=5",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"wallet",
+								"recent-transactions"
+							],
+							"query": [
+								{
+									"key": "restaurantId",
+									"value": "4A3B2C1D-E5F6-4A7B-8C9D-0E1A2B3D4F5E"
+								},
+								{
+									"key": "limit",
+									"value": "5"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Charge Commission from LockedAmount (Internal)",
+					"request": {
+						"description": "Trừ phí hoa hồng từ lockedAmount của ví nhà hàng sang ví Admin. Không ảnh hưởng balance (doanh thu thuần).",
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-internal-token",
+								"value": "{{internal_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"restaurantId\": \"4A3B2C1D-E5F6-4A7B-8C9D-0E1A2B3D4F5E\",\n    \"adminUserId\": \"49D42587-056D-4697-853C-52E69EC9A7A9\",\n    \"amount\": 400000,\n    \"description\": \"Auto commission collection (MONTH)\",\n    \"idempotencyKey\": \"AUTO-COMM-2026-04\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/wallet/commission/charge",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"wallet",
+								"commission",
+								"charge"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Settle Booking Deposit (Internal)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-internal-token",
+								"value": "{{internal_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"bookingId\": \"<booking-uuid>\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/internal/wallet/settle-booking",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"internal",
+								"wallet",
+								"settle-booking"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Withdrawals",
+			"item": [
+				{
+					"name": "Create Withdrawal Request (Internal)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-internal-token",
+								"value": "{{internal_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"idOrSlug\": \"the-culinary-curator\",\n    \"amount\": 1500000,\n    \"description\": \"Rút tiền kinh doanh tháng\",\n    \"withdrawMethod\": \"CARD\",\n    \"bankInfo\": {\n        \"bankName\": \"NCB\",\n        \"cardNumber\": \"9704198426145678\",\n        \"accountName\": \"NGUYEN VAN A\"\n    },\n    \"qrCodeUrl\": \"https://storage.seatnow.com/qr/restaurant.png\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/wallet/withdraw",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"wallet",
+								"withdraw"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Withdrawal (Internal)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-internal-token",
+								"value": "{{internal_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"providerTxnId\": \"TXN12345\",\n    \"metadataJson\": \"{\\\"bank\\\": \\\"Vietcombank\\\"}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/internal/wallet/withdraw/:id/approve",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"internal",
+								"wallet",
+								"withdraw",
+								":id",
+								"approve"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "<transaction-uuid>"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Reject Withdrawal (Internal)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-internal-token",
+								"value": "{{internal_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"reason\": \"Thong tin sai lech\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/internal/wallet/withdraw/:id/reject",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"internal",
+								"wallet",
+								"withdraw",
+								":id",
+								"reject"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "<transaction-uuid>"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. Webhooks & Callbacks",
+			"item": [
+				{
+					"name": "Momo Webhook",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"partnerCode\": \"MOMO\",\n    \"orderId\": \"<ref-code>\",\n    \"requestId\": \"123456\",\n    \"amount\": 50000,\n    \"resultCode\": 0,\n    \"message\": \"Thanh cong\",\n    \"signature\": \"<hash>\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/webhook/momo",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"webhook",
+								"momo"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "VNPay Webhook",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": []
+						},
+						"url": {
+							"raw": "{{baseUrl}}/webhook/vnpay",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"webhook",
+								"vnpay"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Momo Return URL",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/return/momo?resultCode=0&orderId=<ref-code>",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"return",
+								"momo"
+							],
+							"query": [
+								{
+									"key": "resultCode",
+									"value": "0"
+								},
+								{
+									"key": "orderId",
+									"value": "<ref-code>"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "VNPay Return URL",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/return/vnpay?vnp_ResponseCode=00&vnp_TxnRef=<ref-code>",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"return",
+								"vnpay"
+							],
+							"query": [
+								{
+									"key": "vnp_ResponseCode",
+									"value": "00"
+								},
+								{
+									"key": "vnp_TxnRef",
+									"value": "<ref-code>"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3005/api/v1/payment"
+		},
+		{
+			"key": "token",
+			"value": "<your-jwt-token>"
+		},
+		{
+			"key": "internal_token",
+			"value": "<your-secret-internal-token>"
+		}
+	]
+}

@@ -1,0 +1,770 @@
+const { sql, getPool } = require('../config/db');
+
+const ACTIVE_STATUSES = ['PENDING','CONFIRMED','ARRIVED'];
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidGuid(id) {
+  return typeof id === 'string' && GUID_RE.test(id);
+}
+
+// Helper để parse JSON với giá trị mặc định
+function j(v, def) { try { return v ? JSON.parse(v) : def; } catch { return def; } }
+
+// Hàm lấy thông tin nhà hàng
+async function getRestaurant(restaurantId) {
+  const pool = await getPool();
+  const rs = await pool.request()
+    .input('id', sql.UniqueIdentifier, restaurantId)
+    .query(`
+      SELECT TOP 1 
+        r.id, r.ownerId, r.status, r.depositEnabled, r.depositPolicyJson, r.commissionRate,
+        r.name as restaurantName, r.address as restaurantAddress,
+        u.email as ownerEmail, u.name as ownerName
+      FROM dbo.Restaurants r
+      LEFT JOIN dbo.Users u ON r.ownerId = u.id
+      WHERE r.id=@id
+    `);
+  return rs.recordset[0] || null;
+}
+
+// Hàm lấy thông tin bàn ăn
+async function getTable(tableId) {
+  if (!isValidGuid(tableId)) return null;
+  const pool = await getPool();
+  const rs = await pool.request()
+    .input('id', sql.UniqueIdentifier, tableId)
+    .query(`SELECT TOP 1 * FROM dbo.Tables WHERE id=@id`);
+  return rs.recordset[0] || null;
+}
+
+// Hàm tìm booking theo ID
+async function findById(id) {
+  if (!isValidGuid(id)) return null;
+  const pool = await getPool();
+  const rs = await pool.request()
+    .input('id', sql.UniqueIdentifier, id)
+    .query(`
+      SELECT b.*, 
+             COALESCE(u.name, b.guestName) AS customerName,
+             COALESCE(u.email, b.guestEmail) AS customerEmail,
+             COALESCE(u.phone, b.guestPhone) AS customerPhone,
+             u.avatar AS customerAvatar,
+             t.tableNumber,
+             t.location AS tableLocation
+      FROM dbo.Bookings b
+      LEFT JOIN dbo.Users u ON b.customerId = u.id
+      LEFT JOIN dbo.Tables t ON b.tableId = t.id
+      WHERE b.id=@id
+    `);
+  return rs.recordset[0] || null;
+}
+
+// Hàm tìm booking theo mã (Booking Code duy nhất)
+async function findByCode(bookingCode) {
+  if (!bookingCode) return null;
+  const pool = await getPool();
+  const rs = await pool.request()
+    .input('bookingCode', sql.NVarChar(30), bookingCode)
+    .query(`
+      SELECT b.*, 
+             COALESCE(u.name, b.guestName) AS customerName,
+             COALESCE(u.email, b.guestEmail) AS customerEmail,
+             COALESCE(u.phone, b.guestPhone) AS customerPhone,
+             u.avatar AS customerAvatar,
+             t.tableNumber,
+             t.location AS tableLocation
+      FROM dbo.Bookings b
+      LEFT JOIN dbo.Users u ON b.customerId = u.id
+      LEFT JOIN dbo.Tables t ON b.tableId = t.id
+      WHERE b.bookingCode=@bookingCode
+    `);
+  return rs.recordset[0] || null;
+}
+
+// Hàm tìm booking theo mã và số điện thoại khách
+async function findByCodeAndGuestPhone(bookingCode, guestPhone) {
+  const pool = await getPool();
+  const rs = await pool.request()
+    .input('bookingCode', sql.NVarChar(30), bookingCode)
+    .input('guestPhone', sql.NVarChar(20), guestPhone)
+    .query(`
+      SELECT b.*, 
+             COALESCE(u.name, b.guestName) AS customerName,
+             COALESCE(u.email, b.guestEmail) AS customerEmail,
+             COALESCE(u.phone, b.guestPhone) AS customerPhone,
+             u.avatar AS customerAvatar,
+             t.tableNumber,
+             t.location AS tableLocation
+      FROM dbo.Bookings b
+      LEFT JOIN dbo.Users u ON b.customerId = u.id
+      LEFT JOIN dbo.Tables t ON b.tableId = t.id
+      WHERE b.bookingCode=@bookingCode AND b.guestPhone=@guestPhone
+    `);
+  return rs.recordset[0] || null;
+}
+
+// Hàm liệt kê booking theo khách hàng
+async function listByCustomer(customerId, { limit = 20, offset = 0 } = {}) {
+  const pool = await getPool();
+  const rs = await pool.request()
+    .input('customerId', sql.UniqueIdentifier, customerId)
+    .input('limit', sql.Int, limit)
+    .input('offset', sql.Int, offset)
+    .query(`
+      SELECT b.*, 
+             u.name AS customerName,
+             u.avatar AS customerAvatar,
+             t.tableNumber,
+             t.location AS tableLocation
+      FROM dbo.Bookings b
+      LEFT JOIN dbo.Users u ON b.customerId = u.id
+      LEFT JOIN dbo.Tables t ON b.tableId = t.id
+      WHERE b.customerId=@customerId
+      ORDER BY b.createdAt DESC
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+    `);
+  return rs.recordset;
+}
+
+// Hàm liệt kê booking theo nhà hàng với các bộ lọc
+async function listByRestaurant(restaurantId, { from, to, status, limit = 50, offset = 0, sort = 'DESC' } = {}) {
+  const pool = await getPool();
+  const req = pool.request()
+    .input('restaurantId', sql.UniqueIdentifier, restaurantId)
+    .input('limit', sql.Int, limit)
+    .input('offset', sql.Int, offset);
+
+  const where = ['b.restaurantId=@restaurantId'];
+  if (from) { where.push('b.bookingDate >= @from'); req.input('from', sql.Date, from); }
+  if (to) { where.push('b.bookingDate <= @to'); req.input('to', sql.Date, to); }
+  if (status) { where.push('b.status=@status'); req.input('status', sql.NVarChar(30), status); }
+
+  const sortDirection = sort.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+  const rs = await req.query(`
+    SELECT b.*, 
+           COALESCE(u.name, b.guestName) AS customerName,
+           COALESCE(u.email, b.guestEmail) AS customerEmail,
+           COALESCE(u.phone, b.guestPhone) AS customerPhone,
+           u.avatar AS customerAvatar,
+           t.tableNumber,
+           t.location AS tableLocation,
+           COUNT(*) OVER() as totalRecords
+    FROM dbo.Bookings b
+    LEFT JOIN dbo.Users u ON b.customerId = u.id
+    LEFT JOIN dbo.Tables t ON b.tableId = t.id
+    WHERE ${where.join(' AND ')}
+    ORDER BY b.bookingDate ${sortDirection}, b.bookingTime ${sortDirection}, b.createdAt DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+  `);
+
+  const summaryWhere = ['restaurantId=@restaurantId'];
+  if (from) summaryWhere.push('bookingDate >= @from');
+  if (to) summaryWhere.push('bookingDate <= @to');
+
+  const rsSummary = await req.query(`
+    SELECT 
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN status IN ('CANCELLED', 'NO_SHOW') THEN 1 ELSE 0 END) as cancelled
+    FROM dbo.Bookings
+    WHERE ${summaryWhere.join(' AND ')}
+  `);
+
+  const summary = rsSummary.recordset[0] || { total: 0, completed: 0, cancelled: 0 };
+  const total = rs.recordset[0]?.totalRecords || 0;
+
+  return {
+    items: rs.recordset,
+    total,
+    summary
+  };
+}
+
+
+// Hàm chèn booking mới trong một giao dịch
+async function insertBookingTx(payload) {
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool);
+
+  await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+  try {
+    const req = new sql.Request(tx);
+
+    const rs = await req
+      .input('bookingCode', sql.NVarChar(30), payload.bookingCode)
+      .input('customerId', sql.UniqueIdentifier, payload.customerId || null)
+      .input('guestName', sql.NVarChar(100), payload.guestName || null)
+      .input('guestPhone', sql.NVarChar(20), payload.guestPhone || null)
+      .input('guestEmail', sql.NVarChar(255), payload.guestEmail || null)
+      .input('restaurantId', sql.UniqueIdentifier, payload.restaurantId)
+      .input('tableId', sql.UniqueIdentifier, payload.tableId)
+      .input('bookingDate', sql.Date, payload.bookingDate)
+      .input('bookingTime', sql.NVarChar(10), payload.bookingTime)
+      .input('numGuests', sql.Int, payload.numGuests)
+      .input('status', sql.NVarChar(30), payload.status)
+      .input('specialRequests', sql.NVarChar(sql.MAX), payload.specialRequests || null)
+      .input('depositRequired', sql.Bit, payload.depositRequired ? 1 : 0)
+      .input('depositAmount', sql.Float, payload.depositRequired ? payload.depositAmount : null)
+      .input('depositPaid', sql.Bit, payload.depositPaid ? 1 : 0)
+      .input('depositPaidAt', sql.DateTime2, payload.depositPaidAt || null)
+      .input('commissionFee', sql.Float, payload.commissionFee ?? null)
+      .query(`
+        INSERT INTO dbo.Bookings (
+          bookingCode, customerId, guestName, guestPhone, guestEmail,
+          restaurantId, tableId, bookingDate, bookingTime, numGuests,
+          status, specialRequests, depositRequired, depositAmount,
+          depositPaid, depositPaidAt, commissionFee
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @bookingCode, @customerId, @guestName, @guestPhone, @guestEmail,
+          @restaurantId, @tableId, @bookingDate, @bookingTime, @numGuests,
+          @status, @specialRequests, @depositRequired, @depositAmount,
+          @depositPaid, @depositPaidAt, @commissionFee
+        )
+      `);
+
+    await tx.commit();
+    return rs.recordset[0];
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
+// Tổng hợp commission theo nhà hàng và khoảng thời gian (dựa trên các trạng thái hợp lệ)
+async function getCommissionSummaryByRestaurant(restaurantId, { from, to } = {}) {
+  const pool = await getPool();
+  const req = pool.request()
+    .input('restaurantId', sql.UniqueIdentifier, restaurantId);
+
+  // Tính commission cho các đơn đã thanh toán cọc và không hoàn cọc
+  const eligibleStatuses = ['CONFIRMED', 'ARRIVED', 'COMPLETED', 'NO_SHOW'];
+  const timeExpr = 'COALESCE(depositPaidAt, completedAt, confirmedAt, createdAt)';
+
+  const where = [
+    'restaurantId=@restaurantId',
+    `((status IN (${eligibleStatuses.map((_, i) => `@st${i}`).join(',')})) OR (status = 'CANCELLED' AND ISNULL(depositRefunded, 0) = 0))`,
+    'ISNULL(commissionFee, 0) > 0'
+  ];
+
+  eligibleStatuses.forEach((s, i) => req.input(`st${i}`, sql.NVarChar(30), s));
+
+  if (from) {
+    where.push(`${timeExpr} >= @from`);
+    req.input('from', sql.DateTime2, new Date(from));
+  }
+  if (to) {
+    where.push(`${timeExpr} <= @to`);
+    req.input('to', sql.DateTime2, new Date(to));
+  }
+
+  const rs = await req.query(`
+    SELECT
+      COUNT(1) AS totalEligibleBookings,
+      ISNULL(SUM(CASE WHEN commissionPaid = 1 THEN 1 ELSE 0 END), 0) AS settledBookings,
+      ISNULL(SUM(CASE WHEN commissionPaid = 0 THEN 1 ELSE 0 END), 0) AS unsettledBookings,
+      ISNULL(SUM(commissionFee), 0) AS totalCommission,
+      ISNULL(SUM(CASE WHEN commissionPaid = 1 THEN commissionFee ELSE 0 END), 0) AS settledCommission,
+      ISNULL(SUM(CASE WHEN commissionPaid = 0 THEN commissionFee ELSE 0 END), 0) AS unsettledCommission
+    FROM dbo.Bookings
+    WHERE ${where.join(' AND ')}
+  `);
+
+  return rs.recordset[0] || {
+    totalEligibleBookings: 0,
+    settledBookings: 0,
+    unsettledBookings: 0,
+    totalCommission: 0,
+    settledCommission: 0,
+    unsettledCommission: 0
+  };
+}
+
+// Chốt thu commission: đánh dấu commissionPaid=1 cho các booking đủ điều kiện
+async function settleCommissionByRestaurant(restaurantId, { from, to, minAgeMinutes = 0 } = {}) {
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool);
+
+  await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+  try {
+    const req = new sql.Request(tx)
+      .input('restaurantId', sql.UniqueIdentifier, restaurantId)
+      .input('minAgeMinutes', sql.Int, Number(minAgeMinutes || 0));
+
+    const eligibleStatuses = ['CONFIRMED', 'ARRIVED', 'COMPLETED', 'NO_SHOW'];
+    const timeExpr = 'COALESCE(depositPaidAt, completedAt, confirmedAt, createdAt)';
+
+    const where = [
+      'restaurantId=@restaurantId',
+      `((status IN (${eligibleStatuses.map((_, i) => `@st${i}`).join(',')})) OR (status = 'CANCELLED' AND ISNULL(depositRefunded, 0) = 0))`,
+      'commissionPaid=0',
+      'ISNULL(commissionFee, 0) > 0',
+      `${timeExpr} <= DATEADD(minute, -@minAgeMinutes, SYSUTCDATETIME())`
+    ];
+
+    eligibleStatuses.forEach((s, i) => req.input(`st${i}`, sql.NVarChar(30), s));
+
+    if (from) {
+      where.push(`${timeExpr} >= @from`);
+      req.input('from', sql.DateTime2, new Date(from));
+    }
+    if (to) {
+      where.push(`${timeExpr} <= @to`);
+      req.input('to', sql.DateTime2, new Date(to));
+    }
+
+    const rs = await req.query(`
+      UPDATE dbo.Bookings
+      SET commissionPaid = 1,
+          updatedAt = SYSUTCDATETIME()
+      OUTPUT INSERTED.id, INSERTED.commissionFee
+      WHERE ${where.join(' AND ')}
+    `);
+
+    const affected = rs.recordset || [];
+    const totalAmount = affected.reduce((sum, row) => sum + Number(row.commissionFee || 0), 0);
+
+    await tx.commit();
+    return {
+      affectedCount: affected.length,
+      totalAmount,
+      bookingIds: affected.map((x) => x.id)
+    };
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
+// Lay danh sach booking du dieu kien thu commission
+async function listCommissionCandidates({ from, to, minAgeMinutes = 0, restaurantIds = [] } = {}) {
+  const pool = await getPool();
+  const req = pool.request()
+    .input('minAgeMinutes', sql.Int, Number(minAgeMinutes || 0));
+
+  const where = [
+    "(status IN ('CONFIRMED', 'ARRIVED', 'COMPLETED', 'NO_SHOW') OR (status = 'CANCELLED' AND ISNULL(depositRefunded, 0) = 0))",
+    'commissionPaid=0',
+    'ISNULL(commissionFee, 0) > 0',
+    'COALESCE(depositPaidAt, arrivedAt, completedAt, confirmedAt, createdAt) <= DATEADD(minute, -@minAgeMinutes, SYSUTCDATETIME())'
+  ];
+
+  if (from) {
+    where.push('COALESCE(depositPaidAt, completedAt, confirmedAt, createdAt) >= @from');
+    req.input('from', sql.DateTime2, new Date(from));
+  }
+  if (to) {
+    where.push('COALESCE(depositPaidAt, completedAt, confirmedAt, createdAt) <= @to');
+    req.input('to', sql.DateTime2, new Date(to));
+  }
+
+  if (Array.isArray(restaurantIds) && restaurantIds.length) {
+    const placeholders = restaurantIds.map((_, i) => `@rid${i}`).join(', ');
+    restaurantIds.forEach((id, i) => req.input(`rid${i}`, sql.UniqueIdentifier, id));
+    where.push(`restaurantId IN (${placeholders})`);
+  }
+
+  const rs = await req.query(`
+    SELECT
+      id,
+      restaurantId,
+      bookingCode,
+      commissionFee,
+      COALESCE(depositPaidAt, arrivedAt, completedAt, confirmedAt, createdAt) AS eligibleAt
+    FROM dbo.Bookings
+    WHERE ${where.join(' AND ')}
+    ORDER BY restaurantId, eligibleAt ASC
+  `);
+
+  return rs.recordset || [];
+}
+
+// Danh dau commissionPaid=1
+async function markCommissionPaidByBookingIds(bookingIds = []) {
+  if (!Array.isArray(bookingIds) || bookingIds.length === 0) {
+    return { affectedCount: 0, bookingIds: [] };
+  }
+
+  const pool = await getPool();
+  const req = pool.request();
+  const placeholders = bookingIds.map((_, i) => `@bid${i}`).join(', ');
+  bookingIds.forEach((id, i) => req.input(`bid${i}`, sql.UniqueIdentifier, id));
+
+  const rs = await req.query(`
+    UPDATE dbo.Bookings
+    SET commissionPaid = 1,
+        updatedAt = SYSUTCDATETIME()
+    OUTPUT INSERTED.id
+    WHERE id IN (${placeholders})
+      AND commissionPaid = 0
+      AND (status IN ('CONFIRMED', 'ARRIVED', 'COMPLETED', 'NO_SHOW') OR (status = 'CANCELLED' AND ISNULL(depositRefunded, 0) = 0))
+      AND ISNULL(commissionFee, 0) > 0
+  `);
+
+  const affected = rs.recordset || [];
+  return {
+    affectedCount: affected.length,
+    bookingIds: affected.map((x) => x.id)
+  };
+}
+
+// Hàm cập nhật trạng thái booking với điều kiện trạng thái hiện tại
+async function updateStatus(id, fromStatuses, toStatus, timeField) {
+  if (!isValidGuid(id)) return null;
+  const pool = await getPool();
+  const req = pool.request()
+    .input('id', sql.UniqueIdentifier, id)
+    .input('to', sql.NVarChar(30), toStatus);
+
+  fromStatuses.forEach((s, i) => req.input(`f${i}`, sql.NVarChar(30), s));
+
+  const rs = await req.query(`
+    UPDATE dbo.Bookings
+    SET status=@to,
+        ${timeField}=SYSUTCDATETIME(),
+        updatedAt=SYSUTCDATETIME()
+    OUTPUT INSERTED.*
+    WHERE id=@id AND status IN (${fromStatuses.map((_, i) => `@f${i}`).join(',')})
+  `);
+
+  return rs.recordset[0] || null;
+}
+
+// Cancel booking
+async function cancelBooking(bookingId, fromStatuses = null, cancelledBy = null, cancellationReason = null, refund = false) {
+  if (!GUID_RE.test(bookingId)) {
+    throw new Error('Invalid booking id (GUID required)');
+  }
+  const reason = cancellationReason ? String(cancellationReason).slice(0, 500) : null;
+  let validCancelledBy = cancelledBy ? String(cancelledBy).trim().slice(0, 50) : null;
+
+  const statuses = Array.isArray(fromStatuses) && fromStatuses.length
+    ? fromStatuses.map(s => String(s).trim().toUpperCase())
+    : ['PENDING', 'CONFIRMED'];
+
+  const placeholders = statuses.map((_, i) => `@s${i}`).join(', ');
+
+  const pool = await getPool();
+  const req = pool.request()
+    .input('id', sql.UniqueIdentifier, bookingId)
+    .input('cancelledBy', sql.NVarChar(50), validCancelledBy)
+    .input('reason', sql.NVarChar(500), reason)
+    .input('refund', sql.Bit, refund ? 1 : 0);
+
+  statuses.forEach((s, i) => req.input(`s${i}`, sql.NVarChar(100), s));
+
+  let res;
+  try {
+    res = await req.query(
+      `UPDATE dbo.Bookings
+      SET status = 'CANCELLED',
+          cancelledAt = SYSDATETIME(),
+          cancelledBy = @cancelledBy,
+          cancellationReason = @reason,
+          depositRefunded = CASE WHEN @refund = 1 THEN 1 ELSE depositRefunded END,
+          updatedAt = SYSDATETIME()
+      OUTPUT inserted.*
+      WHERE id = @id AND status IN (${placeholders})`
+    );
+  } catch (e) {
+    console.error('[cancelBooking] SQL error:', e && e.message);
+    throw e;
+  }
+
+  if (!res || !res.rowsAffected || res.rowsAffected[0] === 0) return null;
+
+  const rs2 = await pool.request()
+    .input('id', sql.UniqueIdentifier, bookingId)
+    .query(`SELECT TOP 1 * FROM dbo.Bookings WHERE id=@id`);
+
+  return rs2.recordset[0] || null;
+}
+
+// Thống kê Portfolio cho Chủ sở hữu nhà hàng
+async function getOwnerPortfolioSummary(ownerId, { from, to } = {}) {
+  const pool = await getPool();
+  let dateFilter = '';
+  if (from && to) {
+    dateFilter = "AND b.bookingDate BETWEEN @from AND @to";
+  } else if (from) {
+    dateFilter = "AND b.bookingDate >= @from";
+  } else if (to) {
+    dateFilter = "AND b.bookingDate <= @to";
+  }
+
+  const reqGlobal = pool.request().input('ownerId', sql.UniqueIdentifier, ownerId);
+  if (from) reqGlobal.input('from', sql.Date, from);
+  if (to) reqGlobal.input('to', sql.Date, to);
+
+  const rsGlobal = await reqGlobal.query(`
+    SELECT
+      COUNT(b.id) AS totalBookings,
+      ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN b.depositAmount ELSE 0 END), 0) - ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'NO_SHOW', 'CANCELLED') AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.commissionFee, 0) ELSE 0 END), 0) AS totalRevenue,
+      ISNULL(SUM(CASE WHEN b.status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS totalCancelled,
+      ISNULL(SUM(CASE WHEN b.status = 'NO_SHOW' THEN 1 ELSE 0 END), 0) AS totalNoShow,
+      ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN b.depositAmount ELSE 0 END), 0) AS totalGrossRevenue,
+      SUM(CASE WHEN b.numGuests <= 2 THEN 1 ELSE 0 END) AS countCouple,
+      SUM(CASE WHEN b.numGuests BETWEEN 3 AND 7 THEN 1 ELSE 0 END) AS countSmallGroup,
+      SUM(CASE WHEN b.numGuests >= 8 THEN 1 ELSE 0 END) AS countParty,
+      COUNT(DISTINCT r.id) AS totalRestaurants,
+      (SELECT ISNULL(SUM(r2.ratingCount), 0) FROM dbo.Restaurants r2 WHERE r2.ownerId = @ownerId) AS portfolioTotalReviews,
+      (SELECT ISNULL(SUM(r2.ratingAvg * r2.ratingCount) / NULLIF(SUM(r2.ratingCount), 0), 0) FROM dbo.Restaurants r2 WHERE r2.ownerId = @ownerId) AS portfolioRatingAvg
+    FROM dbo.Restaurants r
+    LEFT JOIN dbo.Bookings b ON r.id = b.restaurantId ${dateFilter}
+    WHERE r.ownerId = @ownerId
+  `);
+
+  const reqBreakdown = pool.request().input('ownerId', sql.UniqueIdentifier, ownerId);
+  if (from) reqBreakdown.input('from', sql.Date, from);
+  if (to) reqBreakdown.input('to', sql.Date, to);
+
+  const rsBreakdown = await reqBreakdown.query(`
+    SELECT
+      r.id, r.name, r.status as restaurantStatus,
+      COUNT(b.id) AS totalBookings,
+      ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN b.depositAmount ELSE 0 END), 0) - ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'NO_SHOW', 'CANCELLED') AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.commissionFee, 0) ELSE 0 END), 0) AS totalRevenue,
+      ISNULL(SUM(CASE WHEN b.status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS totalCancelled,
+      ISNULL(SUM(CASE WHEN b.status = 'NO_SHOW' THEN 1 ELSE 0 END), 0) AS totalNoShow,
+      ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN b.depositAmount ELSE 0 END), 0) AS totalGrossRevenue,
+      SUM(CASE WHEN b.numGuests <= 2 THEN 1 ELSE 0 END) AS countCouple,
+      SUM(CASE WHEN b.numGuests BETWEEN 3 AND 7 THEN 1 ELSE 0 END) AS countSmallGroup,
+      SUM(CASE WHEN b.numGuests >= 8 THEN 1 ELSE 0 END) AS countParty
+    FROM dbo.Restaurants r
+    LEFT JOIN dbo.Bookings b ON r.id = b.restaurantId ${dateFilter}
+    WHERE r.ownerId = @ownerId
+    GROUP BY r.id, r.name, r.status
+  `);
+
+  const globalStats = rsGlobal.recordset[0] || {};
+  const totalBookings = Number(globalStats.totalBookings || 0);
+  const totalCancelled = Number(globalStats.totalCancelled || 0);
+  const totalNoShow = Number(globalStats.totalNoShow || 0);
+  
+  const breakdown = rsBreakdown.recordset.map(row => {
+    const bTotal = Number(row.totalBookings || 0);
+    const bCancelled = Number(row.totalCancelled || 0);
+    const bNoShow = Number(row.totalNoShow || 0);
+    return {
+      restaurantId: row.id, restaurantName: row.name, restaurantStatus: row.restaurantStatus,
+      totalBookings: bTotal, totalRevenue: Number(row.totalRevenue || 0), totalGrossRevenue: Number(row.totalGrossRevenue || 0),
+      totalCancelled: bCancelled, totalNoShow: bNoShow,
+      cancellationRate: bTotal > 0 ? parseFloat(((bCancelled + bNoShow) / bTotal).toFixed(4)) : 0,
+      guestSizeCounts: { couple: Number(row.countCouple || 0), smallGroup: Number(row.countSmallGroup || 0), party: Number(row.countParty || 0) }
+    };
+  });
+
+  return {
+    summary: {
+      totalRestaurants: Number(globalStats.totalRestaurants || 0), totalBookings, totalRevenue: Number(globalStats.totalRevenue || 0),
+      totalGrossRevenue: Number(globalStats.totalGrossRevenue || 0), totalCancelled, totalNoShow,
+      cancellationRate: totalBookings > 0 ? parseFloat(((totalCancelled + totalNoShow) / totalBookings).toFixed(4)) : 0,
+      portfolioTotalReviews: Number(globalStats.portfolioTotalReviews || 0),
+      portfolioRatingAvg: parseFloat(Number(globalStats.portfolioRatingAvg || 0).toFixed(2)),
+      guestSizeCounts: { couple: Number(globalStats.countCouple || 0), smallGroup: Number(globalStats.countSmallGroup || 0), party: Number(globalStats.countParty || 0) }
+    },
+    breakdown
+  };
+}
+
+// Thống kê Summary cho 1 nhà hàng
+async function getRestaurantStatsSummary(restaurantId, { from, to } = {}) {
+  const pool = await getPool();
+  let dateFilter = '';
+  if (from && to) dateFilter = "AND bookingDate BETWEEN @from AND @to";
+  else if (from) dateFilter = "AND bookingDate >= @from";
+  else if (to) dateFilter = "AND bookingDate <= @to";
+
+  const req = pool.request().input('restaurantId', sql.UniqueIdentifier, restaurantId);
+  if (from) req.input('from', sql.Date, from);
+  if (to) req.input('to', sql.Date, to);
+
+  const rs = await req.query(`
+    SELECT
+      COUNT(id) AS totalBookings,
+      ISNULL(SUM(CASE WHEN depositPaid = 1 AND ISNULL(depositRefunded, 0) = 0 THEN depositAmount ELSE 0 END), 0) - ISNULL(SUM(CASE WHEN status IN ('COMPLETED', 'ARRIVED', 'NO_SHOW', 'CANCELLED') AND ISNULL(depositRefunded, 0) = 0 THEN ISNULL(commissionFee, 0) ELSE 0 END), 0) AS totalRevenue,
+      ISNULL(SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END), 0) AS totalCancelled,
+      ISNULL(SUM(CASE WHEN status = 'NO_SHOW' THEN 1 ELSE 0 END), 0) AS totalNoShow,
+      ISNULL(SUM(CASE WHEN depositPaid = 1 AND ISNULL(depositRefunded, 0) = 0 THEN depositAmount ELSE 0 END), 0) AS totalGrossRevenue,
+      SUM(CASE WHEN numGuests <= 2 THEN 1 ELSE 0 END) AS countCouple,
+      SUM(CASE WHEN numGuests BETWEEN 3 AND 7 THEN 1 ELSE 0 END) AS countSmallGroup,
+      SUM(CASE WHEN numGuests >= 8 THEN 1 ELSE 0 END) AS countParty
+    FROM dbo.Bookings
+    WHERE restaurantId = @restaurantId ${dateFilter}
+  `);
+
+  const stats = rs.recordset[0] || {};
+  const totalBookings = Number(stats.totalBookings || 0);
+  const totalCancelled = Number(stats.totalCancelled || 0);
+  const totalNoShow = Number(stats.totalNoShow || 0);
+
+  return {
+    restaurantId, totalBookings, totalRevenue: Number(stats.totalRevenue || 0), totalGrossRevenue: Number(stats.totalGrossRevenue || 0),
+    totalCancelled, totalNoShow, cancellationRate: totalBookings > 0 ? parseFloat(((totalCancelled + totalNoShow) / totalBookings).toFixed(4)) : 0,
+    guestSizeCounts: { couple: Number(stats.countCouple || 0), smallGroup: Number(stats.countSmallGroup || 0), party: Number(stats.countParty || 0) }
+  };
+}
+
+// Thống kê doanh thu cho MỘT nhà hàng theo thời gian
+async function getRevenueStatistics(restaurantId, { period = 'month', from, to } = {}) {
+  const pool = await getPool();
+  const req = pool.request().input('restaurantId', sql.UniqueIdentifier, restaurantId);
+
+  let periodExpr = "FORMAT(bookingDate, 'yyyy-MM-dd')";
+  if (period === 'hour') periodExpr = "RIGHT('0' + CAST(FLOOR(CAST(LEFT(bookingTime, 2) AS INT) / 2) * 2 AS VARCHAR(2)), 2) + ':00'";
+  else if (period === 'day') periodExpr = "FORMAT(bookingDate, 'yyyy-MM-dd')";
+  else if (period === 'week') periodExpr = "FORMAT(bookingDate, 'MMM', 'en-US') + ' W' + CAST((DATEPART(day, bookingDate) - 1) / 7 + 1 AS VARCHAR)";
+  else if (period === 'month') periodExpr = "FORMAT(bookingDate, 'yyyy-MM')";
+  else if (period === 'quarter') periodExpr = "CONCAT(YEAR(bookingDate), '-Q', DATEPART(quarter, bookingDate))";
+  else if (period === 'year') periodExpr = "FORMAT(bookingDate, 'yyyy')";
+
+  req.input('from', sql.Date, from || '2000-01-01');
+  req.input('to', sql.Date, to || new Date().toISOString().split('T')[0]);
+
+  let query = '';
+  if (period === 'hour' || period === 'day' || period === 'week') {
+      if (period === 'hour') {
+        query = `
+          WITH Hours AS (SELECT 0 AS h UNION ALL SELECT h + 2 FROM Hours WHERE h < 22)
+          SELECT 
+            RIGHT('0' + CAST(h AS VARCHAR(2)), 2) + ':00' AS timePeriod,
+            COUNT(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN b.id END) AS totalBookings,
+            COUNT(CASE WHEN b.status = 'CANCELLED' THEN b.id END) AS totalCancelled,
+            ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.depositAmount, 0) END), 0) AS totalGrossRevenue,
+            ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.depositAmount, 0) END), 0) - ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'NO_SHOW', 'CANCELLED') AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.commissionFee, 0) END), 0) AS totalRevenue,
+            ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN b.numGuests END), 0) AS totalGuests
+          FROM Hours
+          LEFT JOIN (SELECT * FROM dbo.Bookings WHERE restaurantId = @restaurantId AND status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'CANCELLED', 'NO_SHOW') ${from ? 'AND bookingDate >= @from' : ''} ${to ? 'AND bookingDate <= @to' : ''}) b 
+          ON FLOOR(CAST(LEFT(b.bookingTime, 2) AS INT) / 2) * 2 = Hours.h
+          GROUP BY h ORDER BY h ASC`;
+      } else if (period === 'day') {
+        query = `
+          WITH DateCTE AS (SELECT CAST(@from AS DATE) AS d UNION ALL SELECT DATEADD(day, 1, d) FROM DateCTE WHERE d < CAST(@to AS DATE))
+          SELECT 
+            FORMAT(DateCTE.d, 'yyyy-MM-dd') AS timePeriod,
+            COUNT(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN b.id END) AS totalBookings,
+            COUNT(CASE WHEN b.status = 'CANCELLED' THEN b.id END) AS totalCancelled,
+            ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.depositAmount, 0) END), 0) AS totalGrossRevenue,
+            ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.depositAmount, 0) END), 0) - ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'NO_SHOW', 'CANCELLED') AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.commissionFee, 0) END), 0) AS totalRevenue,
+            ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN b.numGuests END), 0) AS totalGuests
+          FROM DateCTE
+          LEFT JOIN (SELECT * FROM dbo.Bookings WHERE restaurantId = @restaurantId AND status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'CANCELLED', 'NO_SHOW')) b 
+          ON CAST(b.bookingDate AS DATE) = DateCTE.d
+          GROUP BY DateCTE.d ORDER BY DateCTE.d ASC`;
+      } else {
+        query = `
+          WITH DateCTE AS (SELECT CAST(@from AS DATE) AS d UNION ALL SELECT DATEADD(day, 1, d) FROM DateCTE WHERE d < CAST(@to AS DATE))
+          SELECT 
+            FORMAT(DateCTE.d, 'MMM', 'en-US') + ' W' + CAST((DATEPART(day, DateCTE.d) - 1) / 7 + 1 AS VARCHAR) AS timePeriod,
+            COUNT(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN b.id END) AS totalBookings,
+            COUNT(CASE WHEN b.status = 'CANCELLED' THEN b.id END) AS totalCancelled,
+            ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.depositAmount, 0) END), 0) AS totalGrossRevenue,
+            ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.depositAmount, 0) END), 0) - ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'NO_SHOW', 'CANCELLED') AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.commissionFee, 0) END), 0) AS totalRevenue,
+            ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN b.numGuests END), 0) AS totalGuests
+          FROM DateCTE
+          LEFT JOIN (SELECT * FROM dbo.Bookings WHERE restaurantId = @restaurantId AND status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'CANCELLED', 'NO_SHOW')) b 
+          ON CAST(b.bookingDate AS DATE) = DateCTE.d
+          GROUP BY FORMAT(DateCTE.d, 'MMM', 'en-US') + ' W' + CAST((DATEPART(day, DateCTE.d) - 1) / 7 + 1 AS VARCHAR), YEAR(DateCTE.d), MONTH(DateCTE.d)
+          ORDER BY YEAR(DateCTE.d) ASC, MONTH(DateCTE.d) ASC, timePeriod ASC OPTION (MAXRECURSION 0)`;
+      }
+  } else {
+    query = `
+      SELECT
+        ${periodExpr} AS timePeriod,
+        COUNT(CASE WHEN status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN id END) AS totalBookings,
+        COUNT(CASE WHEN status = 'CANCELLED' THEN id END) AS totalCancelled,
+        ISNULL(SUM(CASE WHEN depositPaid = 1 AND ISNULL(depositRefunded, 0) = 0 THEN ISNULL(depositAmount, 0) END), 0) AS totalGrossRevenue,
+        ISNULL(SUM(CASE WHEN depositPaid = 1 AND ISNULL(depositRefunded, 0) = 0 THEN ISNULL(depositAmount, 0) END), 0) - ISNULL(SUM(CASE WHEN status IN ('COMPLETED', 'ARRIVED', 'NO_SHOW', 'CANCELLED') AND ISNULL(depositRefunded, 0) = 0 THEN ISNULL(commissionFee, 0) END), 0) AS totalRevenue,
+        ISNULL(SUM(CASE WHEN status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN numGuests END), 0) AS totalGuests
+      FROM dbo.Bookings
+      WHERE restaurantId = @restaurantId AND status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'CANCELLED', 'NO_SHOW') ${from ? 'AND bookingDate >= @from' : ''} ${to ? 'AND bookingDate <= @to' : ''}
+      GROUP BY ${periodExpr} ORDER BY timePeriod ASC`;
+  }
+
+  const rs = await req.query(query);
+  return rs.recordset || [];
+}
+
+// Thống kê phân bổ giờ đặt bàn
+async function getHourlyBookingStats(restaurantId, { from, to } = {}) {
+  const pool = await getPool();
+  const req = pool.request().input('restaurantId', sql.UniqueIdentifier, restaurantId);
+  if (from) req.input('from', sql.Date, from);
+  if (to) req.input('to', sql.Date, to);
+  const query = `
+    WITH Hours AS (SELECT 0 AS h UNION ALL SELECT h + 2 FROM Hours WHERE h < 22)
+    SELECT RIGHT('0' + CAST(h AS VARCHAR(2)), 2) + ':00' AS hour, COUNT(b.id) AS count
+    FROM Hours LEFT JOIN dbo.Bookings b ON FLOOR(CAST(LEFT(b.bookingTime, 2) AS INT) / 2) * 2 = Hours.h AND b.restaurantId = @restaurantId ${from ? 'AND b.bookingDate >= @from' : ''} ${to ? 'AND b.bookingDate <= @to' : ''}
+    GROUP BY h ORDER BY h ASC`;
+  const rs = await req.query(query);
+  return rs.recordset || [];
+}
+
+async function getOwnerHourlyBookingStats(ownerId, { from, to } = {}) {
+  const pool = await getPool();
+  const req = pool.request().input('ownerId', sql.UniqueIdentifier, ownerId);
+  if (from) req.input('from', sql.Date, from);
+  if (to) req.input('to', sql.Date, to);
+  const query = `
+    WITH Hours AS (SELECT 0 AS h UNION ALL SELECT h + 2 FROM Hours WHERE h < 22)
+    SELECT RIGHT('0' + CAST(h AS VARCHAR(2)), 2) + ':00' AS hour, COUNT(b.id) AS count
+    FROM Hours LEFT JOIN dbo.Bookings b ON FLOOR(CAST(LEFT(b.bookingTime, 2) AS INT) / 2) * 2 = Hours.h INNER JOIN dbo.Restaurants r ON b.restaurantId = r.id AND r.ownerId = @ownerId ${from ? 'AND b.bookingDate >= @from' : ''} ${to ? 'AND b.bookingDate <= @to' : ''}
+    GROUP BY h ORDER BY h ASC`;
+  const rs = await req.query(query);
+  return rs.recordset || [];
+}
+
+async function getOwnerRevenueStatistics(ownerId, { period = 'month', from, to } = {}) {
+  const pool = await getPool();
+  const req = pool.request().input('ownerId', sql.UniqueIdentifier, ownerId);
+  let periodExpr = "FORMAT(bookingDate, 'yyyy-MM-dd')";
+  if (period === 'hour') periodExpr = "RIGHT('0' + CAST(FLOOR(CAST(LEFT(bookingTime, 2) AS INT) / 2) * 2 AS VARCHAR(2)), 2) + ':00'";
+  else if (period === 'day') periodExpr = "FORMAT(bookingDate, 'yyyy-MM-dd')";
+  else if (period === 'week') periodExpr = "CONCAT('Week ', (DATEPART(day, bookingDate) - 1) / 7 + 1)";
+  else if (period === 'month') periodExpr = "FORMAT(bookingDate, 'yyyy-MM')";
+  else if (period === 'quarter') periodExpr = "CONCAT(YEAR(bookingDate), '-Q', DATEPART(quarter, bookingDate))";
+  else if (period === 'year') periodExpr = "FORMAT(bookingDate, 'yyyy')";
+
+  if (from) req.input('from', sql.Date, from);
+  if (to) req.input('to', sql.Date, to);
+
+  let query = `
+    SELECT
+      ${periodExpr} AS timePeriod,
+      COUNT(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN b.id END) AS totalBookings,
+      COUNT(CASE WHEN b.status = 'CANCELLED' THEN b.id END) AS totalCancelled,
+      ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.depositAmount, 0) END), 0) AS totalGrossRevenue,
+      ISNULL(SUM(CASE WHEN b.depositPaid = 1 AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.depositAmount, 0) END), 0) - ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'NO_SHOW', 'CANCELLED') AND ISNULL(b.depositRefunded, 0) = 0 THEN ISNULL(b.commissionFee, 0) END), 0) AS totalRevenue,
+      ISNULL(SUM(CASE WHEN b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'NO_SHOW') THEN b.numGuests END), 0) AS totalGuests
+    FROM dbo.Bookings b JOIN dbo.Restaurants r ON b.restaurantId = r.id
+    WHERE r.ownerId = @ownerId AND b.status IN ('COMPLETED', 'ARRIVED', 'CONFIRMED', 'CANCELLED', 'NO_SHOW') ${from ? 'AND b.bookingDate >= @from' : ''} ${to ? 'AND b.bookingDate <= @to' : ''}
+    GROUP BY ${periodExpr} ORDER BY timePeriod ASC`;
+
+  const rs = await req.query(query);
+  return rs.recordset || [];
+}
+
+async function incrementUserLoyaltyPoints(userId, points) {
+  const pool = await getPool();
+  return pool.request().input('userId', sql.UniqueIdentifier, userId).input('points', sql.Int, points)
+    .query("UPDATE dbo.Users SET loyaltyPoints = ISNULL(loyaltyPoints, 0) + @points, updatedAt = SYSUTCDATETIME() WHERE id = @userId");
+}
+
+async function getGlobalCounts() {
+  const pool = await getPool();
+  const rs = await pool.request().query(`
+    SELECT 
+      (SELECT COUNT(1) FROM dbo.Bookings) as totalBookings,
+      (SELECT COUNT(1) FROM dbo.Restaurants) as totalRestaurants
+  `);
+  return rs.recordset[0] || { totalBookings: 0, totalRestaurants: 0 };
+}
+
+module.exports = {
+  ACTIVE_STATUSES, j, getRestaurant, getTable, findById, findByCodeAndGuestPhone, listByCustomer, listByRestaurant, insertBookingTx,
+  getCommissionSummaryByRestaurant, settleCommissionByRestaurant, listCommissionCandidates, markCommissionPaidByBookingIds,
+  updateStatus, cancelBooking, getOwnerPortfolioSummary, getRestaurantStatsSummary, getRevenueStatistics,
+  getHourlyBookingStats, getOwnerHourlyBookingStats, getOwnerRevenueStatistics, isValidGuid, findByCode, incrementUserLoyaltyPoints,
+  getGlobalCounts
+};

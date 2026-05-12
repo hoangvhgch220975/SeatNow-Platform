@@ -1,0 +1,665 @@
+{
+  "info": {
+    "name": "SeatNow - Admin Service",
+    "_postman_id": "admin-service-v5",
+    "description": "Collection for Admin Service: Dashboard, User Management, Restaurant Management, Financials.\nBase URL: http://localhost:3006\n\nLƯU Ý QUAN TRỌNG: Admin Service chạy ở cổng 3006. Hãy đảm bảo {{baseUrl}} trỏ đúng về cổng này để thấy dữ liệu Rich Owner.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3006/api/v1/admin",
+      "type": "string"
+    },
+    {
+      "key": "authUrl",
+      "value": "http://localhost:3001/api/v1/auth",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "restaurantId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "withdrawalId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Check Service Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "http://localhost:3006/health",
+        "description": "Kiểm tra xem Admin Service có đang chạy đúng ở cổng 3006 hay không. Phản hồi phải là { success: true, service: 'admin-service' }"
+      }
+    },
+    {
+      "name": "0. Auth",
+      "item": [
+        {
+          "name": "Login Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (pm.response.code === 200 && res.accessToken) {",
+                  "    pm.collectionVariables.set('token', res.accessToken.accessToken);",
+                  "    pm.collectionVariables.set('userId', res.user.id);",
+                  "    console.log('Token and UserId updated!');",
+                  "} else if (pm.response.code === 200 && res.data && res.data.accessToken) {",
+                  "    pm.collectionVariables.set('token', res.data.accessToken.accessToken);",
+                  "    pm.collectionVariables.set('userId', res.data.user.id);",
+                  "    console.log('Token and UserId updated from data wrapper!');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"admin@seatnow.local\",\n  \"password\": \"admin\"\n}"
+            },
+            "url": "{{authUrl}}/login",
+            "description": "Login as Admin to get tokens. Variables {{token}} and {{userId}} will be updated automatically."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Stats",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "const stats = res.data || res;",
+                  "pm.test('Has core statistics', function () {",
+                  "    pm.expect(stats).to.have.property('totalUsers');",
+                  "    pm.expect(stats).to.have.property('totalRestaurants');",
+                  "    pm.expect(stats).to.have.property('totalBookings');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard/stats"
+          }
+        },
+        {
+          "name": "Get Admin Revenue Stats",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "pm.test('Response is array', function () {",
+                  "    pm.expect(res.data || res).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/revenue-stats?period=month",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "revenue-stats"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "month"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. User Management",
+      "item": [
+        {
+          "name": "Get User List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users"
+          }
+        },
+        {
+          "name": "Create Restaurant Owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+84912345678\",\n  \"email\": \"owner_test@example.com\",\n  \"name\": \"Test Owner\",\n  \"password\": \"Owner123!\"\n}"
+            },
+            "url": "{{baseUrl}}/users/restaurant-owner"
+          }
+        },
+        {
+          "name": "Reset Owner Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"admin123@\"\n}"
+            },
+            "url": "{{baseUrl}}/users/owner/{{userId}}/reset-password"
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Owner Name\",\n  \"phone\": \"+84988888888\",\n  \"email\": \"updated_owner@example.com\"\n}"
+            },
+            "url": "{{baseUrl}}/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Delete User (Hard Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users/{{userId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Restaurant Management",
+      "item": [
+        {
+          "name": "Search All Restaurants",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants?q=Sushi&status=all&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "Sushi",
+                  "description": "Keyword search (name/address)"
+                },
+                {
+                  "key": "status",
+                  "value": "all",
+                  "description": "all, active, pending, suspended"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Pending Restaurants",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/restaurants/pending"
+          }
+        },
+        {
+          "name": "Approve Restaurant",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/restaurants/{{restaurantId}}/approve"
+          }
+        },
+        {
+          "name": "Activate Restaurant",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/restaurants/{{restaurantId}}/activate"
+          }
+        },
+        {
+          "name": "Suspend Restaurant",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/restaurants/{{restaurantId}}/suspend"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Auditing & Lists",
+      "item": [
+        {
+          "name": "Get All Bookings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/bookings"
+          }
+        },
+        {
+          "name": "Get All Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/transactions"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Financials & Settlements",
+      "item": [
+        {
+          "name": "Manual Collect Commission (Flexible)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-04-01T00:00:00Z\",\n  \"to\": \"2026-04-15T23:59:59Z\",\n  \"description\": \"Mid-month collection test\",\n  \"dryRun\": false\n}"
+            },
+            "url": "{{baseUrl}}/commissions/collect"
+          }
+        },
+        {
+          "name": "Settle Quarter Commission (Dry Run)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"year\": 2026,\n  \"quarter\": 1,\n  \"adminUserId\": \"{{userId}}\",\n  \"dryRun\": true\n}"
+            },
+            "url": "{{baseUrl}}/commissions/settle-quarter"
+          }
+        },
+        {
+          "name": "Approve Withdrawal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Validated and approved\"\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals/{{withdrawalId}}/approve"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Partner Requests",
+      "item": [
+        {
+          "name": "Get Partner Requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/partner-requests?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "partner-requests"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Approve Partner Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Mr. John\",\n    \"phone\": \"+84988123456\",\n    \"email\": \"john.smith@restaurant.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/partner-requests/{{requestId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "partner-requests",
+                "{{requestId}}",
+                "approve"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject Partner Request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/partner-requests/{{requestId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "partner-requests",
+                "{{requestId}}",
+                "reject"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Commission Config",
+      "description": "Cấu hình bật/tắt và chu kỳ thu phí hoa hồng tự động. Base path: /api/v1/admin/configs",
+      "item": [
+        {
+          "name": "Get Commission Config",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "pm.test('Has autoEnabled and interval', function () {",
+                  "    const data = res.data || res;",
+                  "    pm.expect(data).to.have.property('autoEnabled');",
+                  "    pm.expect(data).to.have.property('interval');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/configs/commission",
+            "description": "Lấy cấu hình thu phí hoa hồng tự động hiện tại (autoEnabled, interval, updatedAt)."
+          }
+        },
+        {
+          "name": "Enable Auto Commission (MONTH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Success is true', function () {",
+                  "    pm.expect(pm.response.json().success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"autoEnabled\": true,\n  \"interval\": \"MONTH\"\n}"
+            },
+            "url": "{{baseUrl}}/configs/commission",
+            "description": "Bật tính năng thu phí tự động theo chu kỳ MONTH (Mùng 1 hàng tháng). Các giá trị interval hợp lệ: DAY, WEEK, MONTH, QUARTER, YEAR."
+          }
+        },
+        {
+          "name": "Disable Auto Commission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"autoEnabled\": false\n}"
+            },
+            "url": "{{baseUrl}}/configs/commission",
+            "description": "Tắt tính năng thu phí tự động. Khi tắt, phí hoa hồng sẽ tích lũy trong lockedAmount cho đến khi Admin thu thủ công."
+          }
+        },
+        {
+          "name": "Set Interval to DAY",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"interval\": \"DAY\"\n}"
+            },
+            "url": "http://localhost:3006/api/v1/admin/configs/commission",
+            "description": "Đổi chu kỳ thu phí sang hàng ngày (00:00 mỗi ngày)."
+          }
+        }
+      ]
+    }
+  ]
+}
