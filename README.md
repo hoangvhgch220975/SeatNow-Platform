@@ -1,7 +1,7 @@
 # SeatNow
 
 <p align="center">
-  <img src="./Final%20Project%20FE/frontend/src/assets/logos/logo.png" alt="SeatNow logo" width="120" />
+  <img src="Final%20Project%20FE/frontend/src/assets/logos/logo.png" alt="SeatNow logo" width="120" />
 </p>
 
 <p align="center">
@@ -386,4 +386,4 @@ The React app contains role-specific route groups:
 
 ## License
 
-This repository was created as a final project for SeatNow. Add a license file before publishing or distributing the project publicly.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
